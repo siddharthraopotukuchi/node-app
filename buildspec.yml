@@ -4,6 +4,11 @@ phases:
     commands:
       - echo Logging in to Amazon ECR...
       - aws --version
+      - apt-get install wget apt-transport-https gnupg
+      - wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add -
+      - echo deb https://aquasecurity.github.io/trivy-repo/deb bionic main | tee -a /etc/apt/sources.list.d/trivy.list
+      - apt-get update
+      - apt-get install -y trivy
       - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
       - REPOSITORY_URI=337508156067.dkr.ecr.us-east-2.amazonaws.com/node-app
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
@@ -16,22 +21,14 @@ phases:
       - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
   post_build:
     commands:
-      - echo Build completed on `date`
+      - trivy --no-progress --exit-code 1 --severity HIGH,CRITICAL $REPOSITORY_URI:success
+      - docker push $REPOSITORY_URI:success- echo Build completed on `date`
       - echo Pushing the Docker images...
       - docker push $REPOSITORY_URI:latest
       - docker push $REPOSITORY_URI:$IMAGE_TAG
       - echo Writing image definitions file...
       - printf '[{"name":"nodeapp","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
       - cat imagedefinitions.json 
-      
-$ cat Dockerfile
-FROM node-app
-
-RUN apk add curl \
-    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh -s -- -b /usr/local/bin \
-    && trivy filesystem --exit-code 1 --no-progress /
-
-$ docker build -t vulnerable-image .
 
 artifacts:
     files: imagedefinitions.json
